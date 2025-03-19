@@ -1,14 +1,66 @@
-pub fn add(left: u64, right: u64) -> u64 {
-    left + right
+use std::collections::HashMap;
+use std::rc::Rc;
+use std::sync::{Arc, Mutex};
+use std::time::{Duration, SystemTime};
+
+pub enum Endpoint {
+    Ping,
+    Info,
+    Health,
+    Env,
+    Metrics,
+    Shutdown,
+    ThreadDump,
 }
 
-#[cfg(test)]
-mod tests {
-    use super::*;
+pub type HealthCheckFn = dyn Fn() -> Box<dyn Future<Output = Result<(), Err>> + Send> + Send;
 
-    #[test]
-    fn it_works() {
-        let result = add(2, 2);
-        assert_eq!(result, 4);
-    }
+#[derive(Debug, Clone)]
+pub struct HealthChecker {
+    key: String,
+    is_mandatory: bool,
+    func: HealthCheckFn,
 }
+
+#[derive(Debug, Clone)]
+pub struct HealthConfig {
+    cache_duration: Duration,
+    timeout: Duration,
+    checkers: [HealthChecker],
+}
+
+#[derive(Debug, Clone)]
+pub struct Config {
+    endpoints: [Endpoint],
+    env: String,
+    name: String,
+    port: u16,
+    version: String,
+    health: HealthConfig,
+}
+
+#[derive(Debug,Clone)]
+pub struct HealthInfo {
+    key: String,
+    is_mandatory: bool,
+    success: bool,
+    error: String,
+}
+
+#[derive(Debug,Clone)]
+pub struct Health {
+    last_check_stamp: SystemTime,
+    data: HashMap<String, Rc<HealthInfo>>,
+}
+
+#[derive(Debug,Clone)]
+struct InnerHealth(Arc<Mutex<Health>>);
+
+#[derive(Debug,Clone)]
+struct Inner {
+    cfg: Config,
+    health: InnerHealth
+}
+
+#[derive(Debug)]
+pub struct Actuator(Rc<Inner>);
