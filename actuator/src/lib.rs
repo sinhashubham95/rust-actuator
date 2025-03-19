@@ -1,5 +1,5 @@
 use std::collections::HashMap;
-use std::rc::Rc;
+use std::fmt::Debug;
 use std::sync::{Arc, Mutex};
 use std::time::{Duration, SystemTime};
 
@@ -39,6 +39,41 @@ pub struct Config {
     health: HealthConfig,
 }
 
+#[derive(Debug, Clone)]
+pub struct ApplicationInfo {
+    name: String,
+    env: String,
+    version: String,
+    startup_stamp: SystemTime,
+}
+
+#[derive(Debug, Clone)]
+pub struct GITInfo {
+    build_stamp: String,
+    commit_author: String,
+    commit_id: String,
+    commit__stamp: String,
+    primary_branch: String,
+    url: String,
+    hostname: String,
+    username: String,
+}
+
+#[derive(Debug, Clone)]
+pub struct RuntimeInfo {
+    arch: String,
+    os: String,
+    port: u16,
+    version: String,
+}
+
+#[derive(Debug, Clone)]
+pub struct Info {
+    application: ApplicationInfo,
+    git: GITInfo,
+    runtime: RuntimeInfo,
+}
+
 #[derive(Debug,Clone)]
 pub struct HealthInfo {
     key: String,
@@ -50,7 +85,7 @@ pub struct HealthInfo {
 #[derive(Debug,Clone)]
 pub struct Health {
     last_check_stamp: SystemTime,
-    data: HashMap<String, Rc<HealthInfo>>,
+    data: HashMap<String, HealthInfo>,
 }
 
 #[derive(Debug,Clone)]
@@ -58,9 +93,66 @@ struct InnerHealth(Arc<Mutex<Health>>);
 
 #[derive(Debug,Clone)]
 struct Inner {
-    cfg: Config,
-    health: InnerHealth
+    cfg: *Config,
+    health: InnerHealth,
+    info: Info,
 }
 
 #[derive(Debug)]
-pub struct Actuator(Rc<Inner>);
+pub struct Actuator(Inner);
+
+impl Info {
+    fn new(cfg: &Config) -> Info {
+        Info{
+            application: ApplicationInfo{
+                name: cfg.name.clone(),
+                env: cfg.env.clone(),
+                version: cfg.version.clone(),
+                startup_stamp: SystemTime::now(),
+            },
+            git: GITInfo{
+                build_stamp: "".to_string(),
+                commit_author: "".to_string(),
+                commit_id: "".to_string(),
+                commit__stamp: "".to_string(),
+                primary_branch: "".to_string(),
+                url: "".to_string(),
+                hostname: "".to_string(),
+                username: "".to_string(),
+            },
+            runtime: RuntimeInfo{
+                arch: "".to_string(),
+                os: "".to_string(),
+                port: cfg.port,
+                version: "".to_string(),
+            },
+        }
+    }
+}
+
+impl InnerHealth {
+    fn new() -> InnerHealth {
+        InnerHealth(Arc::new(Mutex::new(Health{
+            last_check_stamp: SystemTime::UNIX_EPOCH,
+            data: HashMap::new(),
+        })))
+    }
+}
+
+impl Actuator {
+    pub fn new(cfg: &Config) -> Actuator {
+        Actuator(Inner{
+            cfg,
+            health: InnerHealth::new(),
+            info: Info::new(cfg),
+        })
+    }
+
+    pub fn info(self) -> Info {
+        self.0.info
+    }
+
+    pub fn health(self) -> HashMap<String, HealthInfo> {
+        HashMap::new()
+    }
+}
