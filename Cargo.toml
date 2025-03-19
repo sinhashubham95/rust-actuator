@@ -1,23 +1,13 @@
-[package]
-name = "rust-actuator"
-description = "Health check and production-ready features for Rust"
-version = "0.1.0"
-license = "MIT"
-readme = "README.md"
-edition = "2024"
-keywords = [
-    "rest-api",
+[workspace.package]
+rust-version = "1.85"
+
+[workspace]
+resolver = "2"
+members = [
     "actuator",
-    "heath-check",
-]
-repository = "https://github.com/sinhashubham95/rust-actuator"
-categories = ["web-programming"]
-authors = ["Shubham Sinha <sinhashubham95@gmail.com>"]
-include = [
-    "README.md",
-    "src/**/*.rs",
-    "LICENSE",
-    "Cargo.toml",
 ]
 
-[dependencies]
+[workspace.metadata.publish]
+order = [
+    "actuator",
+]
