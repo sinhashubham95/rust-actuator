@@ -4,7 +4,8 @@ use std::collections::HashMap;
 use std::fmt::Debug;
 use std::sync::{Arc, Mutex};
 use std::time::{Duration, SystemTime};
-use crate::env::{build_stamp, cpu, git_branch, git_commit_id, git_commit_stamp, os, rustc_version};
+use crate::env::{build_stamp, cpu, envs, git_branch, git_commit_id,
+                 git_commit_stamp, os, rustc_version};
 
 pub enum Endpoint {
     Ping,
@@ -143,6 +144,10 @@ impl Actuator {
         })
     }
 
+    pub fn ping(self) -> bool {
+        true
+    }
+
     pub fn info(self) -> Info {
         self.0.info
     }
@@ -150,4 +155,14 @@ impl Actuator {
     pub fn health(self) -> HashMap<String, HealthInfo> {
         HashMap::new()
     }
+
+    pub fn env(self) -> HashMap<String, String> {
+        envs()
+    }
+
+    pub fn metrics(self) {}
+
+    pub fn shutdown(self) {}
+
+    pub fn thread_dump(self) {}
 }

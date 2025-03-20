@@ -1,3 +1,4 @@
+use std::collections::HashMap;
 use std::env;
 
 pub(crate) fn build_stamp() -> String {
@@ -31,4 +32,8 @@ pub(crate) fn os() -> String {
 
 pub(crate) fn cpu() -> String {
     env::var("VERGEN_SYSINFO_CPU_BRAND").unwrap_or_else(|_| String::from(""))
+}
+
+pub(crate) fn envs() -> HashMap<String, String> {
+    env::vars().collect()
 }
