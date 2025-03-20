@@ -22,3 +22,5 @@ include = [
 ]
 
 [dependencies]
+sysinfo = { version = "0.33" }
+backtrace = {version = "0.3"}
