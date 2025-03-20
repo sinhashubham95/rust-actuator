@@ -2,12 +2,14 @@ mod env;
 
 use std::collections::HashMap;
 use std::fmt::Debug;
+use std::process;
 use std::rc::Rc;
 use std::sync::{Arc, Mutex};
 use std::time::{Duration, SystemTime};
 use crate::env::{build_stamp, cpu, envs, git_branch, git_commit_id,
                  git_commit_stamp, os, rustc_version};
 use sysinfo::{System};
+use backtrace::Backtrace;
 
 pub enum Endpoint {
     Ping,
@@ -191,7 +193,11 @@ impl Actuator {
         })
     }
 
-    pub fn shutdown(self) {}
+    pub fn shutdown(self) {
+        process::exit(0)
+    }
 
-    pub fn thread_dump(self) {}
+    pub fn thread_dump(self) -> String {
+        format!("{:?}", Backtrace::new())
+    }
 }
