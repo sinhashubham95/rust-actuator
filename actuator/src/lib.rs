@@ -4,7 +4,7 @@ use std::collections::HashMap;
 use std::fmt::Debug;
 use std::process;
 use std::rc::Rc;
-use std::sync::{Arc, Mutex};
+use std::sync::{Arc, RwLock};
 use std::time::{Duration, SystemTime};
 use crate::env::{build_stamp, cpu, envs, git_branch, git_commit_id,
                  git_commit_stamp, os, rustc_version};
@@ -78,7 +78,7 @@ pub struct Info {
     runtime: RuntimeInfo,
 }
 
-#[derive(Debug,Clone)]
+#[derive(Debug, Clone)]
 pub struct HealthInfo {
     key: String,
     is_mandatory: bool,
@@ -86,16 +86,19 @@ pub struct HealthInfo {
     error: String,
 }
 
-#[derive(Debug,Clone)]
+#[derive(Debug, Clone)]
 struct Health {
     last_check_stamp: SystemTime,
-    data: HashMap<String, HealthInfo>,
+    data: Rc<HashMap<String, HealthInfo>>,
 }
 
-#[derive(Debug,Clone)]
-struct InnerHealth(Arc<Mutex<Health>>);
+#[derive(Debug, Clone)]
+struct InnerHealth{
+    cfg: HealthConfig,
+    health: Arc<RwLock<Health>>,
+}
 
-#[derive(Debug,Clone)]
+#[derive(Debug, Clone)]
 pub struct Metrics {
     total_memory: u64,
     used_memory: u64,
@@ -107,7 +110,7 @@ pub struct Metrics {
     global_cpu_usage: f32,
 }
 
-#[derive(Debug,Clone)]
+#[derive(Debug, Clone)]
 struct Inner {
     cfg: *Config,
     health: InnerHealth,
@@ -144,11 +147,35 @@ impl Info {
 }
 
 impl InnerHealth {
-    fn new() -> InnerHealth {
-        InnerHealth(Arc::new(Mutex::new(Health{
-            last_check_stamp: SystemTime::UNIX_EPOCH,
-            data: HashMap::new(),
-        })))
+    fn new(cfg: &Config) -> InnerHealth {
+        InnerHealth{
+            cfg: cfg.health.clone(),
+            health: Arc::new(RwLock::new(Health{
+                last_check_stamp: SystemTime::UNIX_EPOCH,
+                data: Rc::new(HashMap::new()),
+            }))
+        }
+    }
+
+    fn get_from_cache(&self) -> Option<Rc<HashMap<String, HealthInfo>>> {
+        let health = self.health.read().unwrap();
+        if SystemTime::now().duration_since(health.last_check_stamp).
+            unwrap_or_else(|_| Duration::MAX) <= self.cfg.cache_duration {
+            Some(health.data.clone())
+        } else {
+            None
+        }
+    }
+
+    fn get_health_and_cache_if_success(&self) -> Result<Rc<HashMap<String, HealthInfo>>, Err> {
+        Ok(Rc::new(HashMap::new()))
+    }
+
+    fn get(&self) -> Result<Rc<HashMap<String, HealthInfo>>,Err> {
+        match self.get_from_cache() {
+            Some(health) => Ok(health),
+            None => self.get_health_and_cache_if_success()
+        }
     }
 }
 
@@ -156,7 +183,7 @@ impl Actuator {
     pub fn new(cfg: &Config) -> Actuator {
         Actuator(Inner{
             cfg,
-            health: InnerHealth::new(),
+            health: InnerHealth::new(cfg),
             info: Rc::new(Info::new(cfg)),
             envs: envs(),
         })
@@ -170,8 +197,8 @@ impl Actuator {
         self.0.info
     }
 
-    pub fn health(self) -> Rc<HashMap<String, HealthInfo>> {
-        Rc::new(HashMap::new())
+    pub fn health(self) -> Result<Rc<HashMap<String, HealthInfo>>, Err> {
+        self.0.health.get()
     }
 
     pub fn env(self) -> Rc<HashMap<String, String>> {
