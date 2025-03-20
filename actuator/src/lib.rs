@@ -1,7 +1,10 @@
+mod env;
+
 use std::collections::HashMap;
 use std::fmt::Debug;
 use std::sync::{Arc, Mutex};
 use std::time::{Duration, SystemTime};
+use crate::env::{build_stamp, cpu, git_branch, git_commit_id, git_commit_stamp, os, rustc_version};
 
 pub enum Endpoint {
     Ping,
@@ -50,13 +53,9 @@ pub struct ApplicationInfo {
 #[derive(Debug, Clone)]
 pub struct GITInfo {
     build_stamp: String,
-    commit_author: String,
     commit_id: String,
-    commit__stamp: String,
+    commit_stamp: String,
     primary_branch: String,
-    url: String,
-    hostname: String,
-    username: String,
 }
 
 #[derive(Debug, Clone)]
@@ -111,20 +110,16 @@ impl Info {
                 startup_stamp: SystemTime::now(),
             },
             git: GITInfo{
-                build_stamp: "".to_string(),
-                commit_author: "".to_string(),
-                commit_id: "".to_string(),
-                commit__stamp: "".to_string(),
-                primary_branch: "".to_string(),
-                url: "".to_string(),
-                hostname: "".to_string(),
-                username: "".to_string(),
+                build_stamp: build_stamp(),
+                commit_id: git_commit_id(),
+                commit_stamp: git_commit_stamp(),
+                primary_branch: git_branch(),
             },
             runtime: RuntimeInfo{
-                arch: "".to_string(),
-                os: "".to_string(),
+                arch: cpu(),
+                os: os(),
                 port: cfg.port,
-                version: "".to_string(),
+                version: rustc_version(),
             },
         }
     }
