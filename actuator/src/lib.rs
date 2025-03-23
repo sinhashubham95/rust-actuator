@@ -1,16 +1,24 @@
 mod env;
 
 use std::collections::HashMap;
-use std::fmt::Debug;
+use std::error::Error;
+use std::fmt::{Debug, Display, Formatter};
+use std::pin::Pin;
 use std::process;
 use std::rc::Rc;
 use std::sync::{Arc, RwLock};
 use std::time::{Duration, SystemTime};
-use crate::env::{build_stamp, cpu, envs, git_branch, git_commit_id,
-                 git_commit_stamp, os, rustc_version};
+use crate::env::{build_stamp, cargo_profile, cpu, envs, git_branch, git_commit_id, git_commit_stamp, os, rustc_version};
 use sysinfo::{System};
 use backtrace::Backtrace;
+use futures::future::join_all;
 
+#[derive(Debug)]
+struct ActuatorError {
+    details: String,
+}
+
+#[derive(Debug, Clone)]
 pub enum Endpoint {
     Ping,
     Info,
@@ -21,25 +29,25 @@ pub enum Endpoint {
     ThreadDump,
 }
 
-pub type HealthCheckFn = dyn Fn() -> Box<dyn Future<Output = Result<(), Err>> + Send> + Send;
+pub type HealthCheckFn<E> = fn() -> Pin<Box<dyn Future<Output = Result<(), E>> + Send>>;
 
 #[derive(Debug, Clone)]
 pub struct HealthChecker {
     key: String,
     is_mandatory: bool,
-    func: HealthCheckFn,
+    func: HealthCheckFn<ActuatorError>,
 }
 
 #[derive(Debug, Clone)]
 pub struct HealthConfig {
     cache_duration: Duration,
     timeout: Duration,
-    checkers: [HealthChecker],
+    checkers: Box<[HealthChecker]>,
 }
 
 #[derive(Debug, Clone)]
 pub struct Config {
-    endpoints: [Endpoint],
+    endpoints: Box<[Endpoint]>,
     env: String,
     name: String,
     port: u16,
@@ -69,6 +77,7 @@ pub struct RuntimeInfo {
     os: String,
     port: u16,
     version: String,
+    cargo_version: String,
 }
 
 #[derive(Debug, Clone)]
@@ -89,7 +98,7 @@ pub struct HealthInfo {
 #[derive(Debug, Clone)]
 struct Health {
     last_check_stamp: SystemTime,
-    data: Rc<HashMap<String, HealthInfo>>,
+    data: HashMap<String, HealthInfo>,
 }
 
 #[derive(Debug, Clone)]
@@ -112,7 +121,7 @@ pub struct Metrics {
 
 #[derive(Debug, Clone)]
 struct Inner {
-    cfg: *Config,
+    cfg: Rc<Config>,
     health: InnerHealth,
     info: Rc<Info>,
     envs: Rc<HashMap<String, String>>,
@@ -120,6 +129,22 @@ struct Inner {
 
 #[derive(Debug)]
 pub struct Actuator(Inner);
+
+impl Display for ActuatorError {
+    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
+        write!(f, "ActuatorError: {}", self.details)
+    }
+}
+
+impl Default for ActuatorError {
+    fn default() -> Self {
+        Self {
+            details: "actuator error".into(),
+        }
+    }
+}
+
+impl Error for ActuatorError {}
 
 impl Info {
     fn new(cfg: &Config) -> Info {
@@ -141,6 +166,7 @@ impl Info {
                 os: os(),
                 port: cfg.port,
                 version: rustc_version(),
+                cargo_version: cargo_profile(),
             },
         }
     }
@@ -152,7 +178,7 @@ impl InnerHealth {
             cfg: cfg.health.clone(),
             health: Arc::new(RwLock::new(Health{
                 last_check_stamp: SystemTime::UNIX_EPOCH,
-                data: Rc::new(HashMap::new()),
+                data: HashMap::new(),
             }))
         }
     }
@@ -161,20 +187,43 @@ impl InnerHealth {
         let health = self.health.read().unwrap();
         if SystemTime::now().duration_since(health.last_check_stamp).
             unwrap_or_else(|_| Duration::MAX) <= self.cfg.cache_duration {
-            Some(health.data.clone())
+            Some(Rc::new(health.data.clone()))
         } else {
             None
         }
     }
 
-    fn get_health_and_cache_if_success(&self) -> Result<Rc<HashMap<String, HealthInfo>>, Err> {
-        Ok(Rc::new(HashMap::new()))
+    async fn get_health_and_cache_if_success(&self) -> (Rc<HashMap<String, HealthInfo>>, bool) {
+        let mut tasks = vec![];
+        for checker in self.cfg.checkers.iter() {
+            let key = checker.key.clone();
+            let is_mandatory = checker.is_mandatory;
+            let fut = (checker.func)();
+            tasks.push(async move {
+                let result = fut.await;
+                HealthInfo {
+                    key,
+                    is_mandatory,
+                    success: result.is_ok(),
+                    error: result.err().unwrap().details,
+                }
+            });
+        }
+        let results: Vec<HealthInfo> = join_all(tasks).await;
+        let new_data: HashMap<String, HealthInfo> = results.into_iter()
+            .map(|info| (info.key.clone(), info))
+            .collect();
+        let ok = new_data
+            .values()
+            .filter(|info| info.is_mandatory)
+            .all(|info| info.success);
+        (Rc::new(new_data), ok)
     }
 
-    fn get(&self) -> Result<Rc<HashMap<String, HealthInfo>>,Err> {
+    async fn get(&self) -> (Rc<HashMap<String, HealthInfo>>, bool) {
         match self.get_from_cache() {
-            Some(health) => Ok(health),
-            None => self.get_health_and_cache_if_success()
+            Some(health) => (health, true),
+            None => self.get_health_and_cache_if_success().await,
         }
     }
 }
@@ -182,30 +231,30 @@ impl InnerHealth {
 impl Actuator {
     pub fn new(cfg: &Config) -> Actuator {
         Actuator(Inner{
-            cfg,
+            cfg: Rc::new(cfg.clone()),
             health: InnerHealth::new(cfg),
             info: Rc::new(Info::new(cfg)),
             envs: envs(),
         })
     }
 
-    pub fn ping(self) -> bool {
+    pub fn ping(&self) -> bool {
         true
     }
 
-    pub fn info(self) -> Rc<Info> {
-        self.0.info
+    pub fn info(&self) -> Rc<Info> {
+        self.0.info.clone()
     }
 
-    pub fn health(self) -> Result<Rc<HashMap<String, HealthInfo>>, Err> {
-        self.0.health.get()
+    pub async fn health(&self) -> (Rc<HashMap<String, HealthInfo>>, bool) {
+        self.0.health.get().await
     }
 
-    pub fn env(self) -> Rc<HashMap<String, String>> {
-        self.0.envs
+    pub fn env(&self) -> Rc<HashMap<String, String>> {
+        self.0.envs.clone()
     }
 
-    pub fn metrics(self) -> Rc<Metrics> {
+    pub fn metrics(&self) -> Rc<Metrics> {
         let mut sys = System::new_all();
         sys.refresh_all();
         Rc::new(Metrics{
@@ -220,11 +269,11 @@ impl Actuator {
         })
     }
 
-    pub fn shutdown(self) {
+    pub fn shutdown(&self) {
         process::exit(0)
     }
 
-    pub fn thread_dump(self) -> String {
+    pub fn thread_dump(&self) -> String {
         format!("{:?}", Backtrace::new())
     }
 }
