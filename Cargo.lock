@@ -3,6 +3,20 @@
 version = 4
 
 [[package]]
+name = "actuator"
+version = "0.1.0"
+dependencies = [
+ "backtrace",
+ "futures",
+ "sysinfo",
+ "tokio",
+]
+
+[[package]]
+name = "actuator-actix-web"
+version = "0.1.0"
+
+[[package]]
 name = "addr2line"
 version = "0.24.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -263,16 +277,6 @@ checksum = "1465873a3dfdaa8ae7cb14b4383657caab0b3e8a0aa9ae8e04b044854c8dfce2"
 dependencies = [
  "crossbeam-deque",
  "crossbeam-utils",
-]
-
-[[package]]
-name = "rust-actuator"
-version = "0.1.0"
-dependencies = [
- "backtrace",
- "futures",
- "sysinfo",
- "tokio",
 ]
 
 [[package]]
