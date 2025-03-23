@@ -25,3 +25,4 @@ include = [
 sysinfo = { version = "0.33" }
 backtrace = {version = "0.3"}
 futures = "0.3"
+tokio = { version = "1.44", features = ["time"] }

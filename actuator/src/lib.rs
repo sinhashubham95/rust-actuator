@@ -12,6 +12,7 @@ use crate::env::{build_stamp, cargo_profile, cpu, envs, git_branch, git_commit_i
 use sysinfo::{System};
 use backtrace::Backtrace;
 use futures::future::join_all;
+use tokio::time::{timeout, Duration as TokioDuration};
 
 #[derive(Debug)]
 struct ActuatorError {
@@ -209,7 +210,28 @@ impl InnerHealth {
                 }
             });
         }
-        let results: Vec<HealthInfo> = join_all(tasks).await;
+        let results: Vec<HealthInfo> = match timeout(TokioDuration::
+                                                     from_secs(self.cfg.timeout.as_secs()),
+                                                     join_all(tasks)).await {
+            Ok(resolved) => resolved,
+            Err(_) => {
+                // Timeout occurred: treat all checkers as failed
+                return (
+                    Rc::new(
+                        self.cfg.checkers.iter().map(|checker| {
+                            let info = HealthInfo {
+                                key: checker.key.clone(),
+                                is_mandatory: checker.is_mandatory,
+                                success: false,
+                                error: "timed out".to_string(),
+                            };
+                            (checker.key.clone(), info)
+                        }).collect()
+                    ),
+                    false,
+                );
+            }
+        };
         let new_data: HashMap<String, HealthInfo> = results.into_iter()
             .map(|info| (info.key.clone(), info))
             .collect();
