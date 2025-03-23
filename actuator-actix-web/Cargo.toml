@@ -1,6 +1,6 @@
 [package]
-name = "actuator"
-description = "Health check and production-ready features for Rust"
+name = "actuator-actix-web"
+description = "Health check and production-ready features for Rust for Actix Web"
 version = "0.1.0"
 license = "MIT"
 readme = "README.md"
@@ -9,6 +9,8 @@ keywords = [
     "rest-api",
     "actuator",
     "heath-check",
+    "actix",
+    "actix-web"
 ]
 repository = "https://github.com/sinhashubham95/rust-actuator"
 categories = ["web-programming"]
@@ -22,7 +24,3 @@ include = [
 ]
 
 [dependencies]
-sysinfo = { version = "0.33" }
-backtrace = {version = "0.3"}
-futures = "0.3"
-tokio = { version = "1.44", features = ["time"] }

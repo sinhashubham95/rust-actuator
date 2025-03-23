@@ -5,6 +5,7 @@ rust-version = "1.85"
 resolver = "2"
 members = [
     "actuator",
+    "actuator-actix-web"
 ]
 
 [workspace.metadata.publish]
